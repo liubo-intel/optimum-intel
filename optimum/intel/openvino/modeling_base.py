@@ -33,6 +33,8 @@ from optimum.modeling_base import OptimizedModel
 from ..utils.import_utils import is_transformers_version
 from .utils import ONNX_WEIGHTS_NAME, OV_XML_FILE_NAME
 
+from openvino.preprocess import PrePostProcessor
+from openvino.runtime import Type
 
 if is_transformers_version("<", "4.25.0"):
     from transformers.generation_utils import GenerationMixin
@@ -246,6 +248,20 @@ class OVBaseModel(PreTrainedModel):
             file_name = file_names[0]
 
         model = cls.load_model(file_name)
+        #---------------------ppp, only used for intel SPR platform-----------------------------#
+        ppp = PrePostProcessor(model)
+        for inputs in model.inputs:
+            input_name = inputs.get_any_name()
+            if input_name.startswith("past_key_values"):
+                ppp.input(input_name).tensor().set_element_type(Type.bf16)
+
+        for outputs in model.outputs:
+            output_name = outputs.get_any_name()
+            if output_name.startswith("present"):
+                ppp.output(output_name).tensor().set_element_type(Type.bf16)
+
+        model = ppp.build()
+        #---------------------ppp, only used for intel SPR platform-----------------------------#
         return cls(model, config=config, model_save_dir=model_save_dir, **kwargs)
 
     @classmethod
